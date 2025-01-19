@@ -32,6 +32,9 @@ class WhisperWriterApp(QObject):
         self.settings_window.settings_closed.connect(self.on_settings_closed)
         self.settings_window.settings_saved.connect(self.restart_app)
 
+        self.type_result = False # Type the result out when it is received.
+        self.use_clipboard = False # Copy the result to the clipboard when it is received.
+
         if ConfigManager.config_file_exists():
             self.initialize_components()
         else:
@@ -45,7 +48,9 @@ class WhisperWriterApp(QObject):
         self.input_simulator = InputSimulator()
 
         self.key_listener = KeyListener()
-        self.key_listener.add_callback("on_activate", self.on_activation)
+        self.key_listener.add_callback("on_activate_typing_only", lambda: self.on_activation(type_result=True, use_clipboard=False))
+        self.key_listener.add_callback("on_activate_clipboard_only", lambda: self.on_activation(type_result=False, use_clipboard=True))
+        self.key_listener.add_callback("on_activate_typing_and_clipboard", lambda: self.on_activation(type_result=True, use_clipboard=True))
         self.key_listener.add_callback("on_deactivate", self.on_deactivation)
 
         model_options = ConfigManager.get_config_section('model_options')
@@ -119,10 +124,13 @@ class WhisperWriterApp(QObject):
             )
             self.initialize_components()
 
-    def on_activation(self):
+    def on_activation(self, type_result, use_clipboard):
         """
         Called when the activation key combination is pressed.
         """
+        self.type_result = type_result
+        self.use_clipboard = use_clipboard
+
         if self.result_thread and self.result_thread.isRunning():
             recording_mode = ConfigManager.get_config_value('recording_options', 'recording_mode')
             if recording_mode == 'press_to_toggle':
@@ -166,7 +174,12 @@ class WhisperWriterApp(QObject):
         """
         When the transcription is complete, type the result and start listening for the activation key again.
         """
-        self.input_simulator.typewrite(result)
+        if(self.type_result):
+            self.input_simulator.typewrite(result)
+
+        if(self.use_clipboard):
+            clipboard = QApplication.clipboard()
+            clipboard.setText(result)
 
         if ConfigManager.get_config_value('misc', 'noise_on_completion'):
             AudioPlayer(os.path.join('assets', 'beep.wav')).play(block=True)

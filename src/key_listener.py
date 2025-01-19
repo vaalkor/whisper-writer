@@ -280,9 +280,17 @@ class KeyListener:
         """Initialize the KeyListener with backends and activation keys."""
         self.backends = []
         self.active_backend = None
-        self.key_chord = None
+
+        self.typing_only_chord = None
+        self.typing_and_clipboard_chord = None
+        self.clipboard_only_chord = None
+
+        self.key_listener = None
+        
         self.callbacks = {
-            "on_activate": [],
+            "on_activate_typing_only": [],
+            "on_activate_clipboard_only": [],
+            "on_activate_typing_and_clipboard": [],
             "on_deactivate": []
         }
         self.load_activation_keys()
@@ -353,9 +361,15 @@ class KeyListener:
 
     def load_activation_keys(self):
         """Load activation keys from configuration."""
-        key_combination = ConfigManager.get_config_value('recording_options', 'activation_key')
-        keys = self.parse_key_combination(key_combination)
-        self.set_activation_keys(keys)
+        typing_only_key = ConfigManager.get_config_value('recording_options', 'typing_activation_key')
+        typing_and_clipboard_key = ConfigManager.get_config_value('recording_options', 'typing_and_clipboard_activation_key')
+        clipboard_only_key = ConfigManager.get_config_value('recording_options', 'clipboard_activation_key')
+
+
+        typing_only_keys = self.parse_key_combination(typing_only_key)
+        typing_and_clipboard_keys = self.parse_key_combination(typing_and_clipboard_key)
+        clipboard_only_keys = self.parse_key_combination(clipboard_only_key)
+        self.set_activation_keys(typing_only_keys, typing_and_clipboard_keys, clipboard_only_keys)
 
     def parse_key_combination(self, combination_string: str) -> Set[KeyCode | frozenset[KeyCode]]:
         """Parse a string representation of key combination into a set of KeyCodes."""
@@ -376,26 +390,41 @@ class KeyListener:
                     keycode = KeyCode[key]
                     keys.add(keycode)
                 except KeyError:
-                    print(f"Unknown key: {key}")
+                    print(f"Unknown key: {key}, in key combination: {combination_string}.")
         return keys
 
-    def set_activation_keys(self, keys: Set[KeyCode]):
+    def set_activation_keys(self, typing_only_keys: Set[KeyCode], typing_and_clipboard_keys: Set[KeyCode], clipboard_only_keys: Set[KeyCode]):
         """Set the activation keys for the KeyChord."""
-        self.key_chord = KeyChord(keys)
+
+        self.typing_only_chord = KeyChord(typing_only_keys)
+        self.typing_and_clipboard_chord = KeyChord(typing_and_clipboard_keys)
+        self.clipboard_only_chord = KeyChord(clipboard_only_keys)
 
     def on_input_event(self, event):
         """Handle input events and trigger callbacks if the key chord becomes active or inactive."""
-        if not self.key_chord or not self.active_backend:
+        if not self.typing_only_chord or not self.active_backend:
             return
 
         key, event_type = event
 
-        was_active = self.key_chord.is_active()
-        is_active = self.key_chord.update(key, event_type)
+        was_active = {
+            "typing_only": self.typing_only_chord.is_active(),
+            "typing_and_clipboard": self.typing_and_clipboard_chord.is_active(),
+            "clipboard_only": self.clipboard_only_chord.is_active()
+        }
+        is_active = {
+            "typing_only": self.typing_only_chord.update(key, event_type),
+            "typing_and_clipboard": self.typing_and_clipboard_chord.update(key, event_type),
+            "clipboard_only": self.clipboard_only_chord.update(key, event_type)
+        }
 
-        if not was_active and is_active:
-            self._trigger_callbacks("on_activate")
-        elif was_active and not is_active:
+        if not was_active["typing_only"] and is_active["typing_only"]:
+            self._trigger_callbacks("on_activate_typing_only")
+        elif not was_active["typing_and_clipboard"] and is_active["typing_and_clipboard"]:
+            self._trigger_callbacks("on_activate_typing_and_clipboard")
+        elif not was_active["clipboard_only"] and is_active["clipboard_only"]:
+            self._trigger_callbacks("on_activate_clipboard_only")
+        elif any(was_active.values()) and not any(is_active.values()):
             self._trigger_callbacks("on_deactivate")
 
     def add_callback(self, event: str, callback: Callable):
@@ -771,11 +800,12 @@ class PynputBackend(InputBackend):
 
         self.keyboard_listener = self.keyboard.Listener(
             on_press=self._on_keyboard_press,
-            on_release=self._on_keyboard_release
-        )
+            on_release=self._on_keyboard_release)
+
         self.mouse_listener = self.mouse.Listener(
             on_click=self._on_mouse_click
         )
+
         self.keyboard_listener.start()
         self.mouse_listener.start()
 
@@ -788,38 +818,47 @@ class PynputBackend(InputBackend):
             self.mouse_listener.stop()
             self.mouse_listener = None
 
-    def _translate_key_event(self, native_event) -> tuple[KeyCode, InputEvent]:
+    def _translate_key_event(self, key_event, is_press) -> tuple[KeyCode, InputEvent]:
         """Translate a pynput event to our internal event representation."""
-        pynput_key, is_press = native_event
-        key_code = self.key_map.get(pynput_key, KeyCode.SPACE)
+        
+        key_code = self.key_map.get(key_event, KeyCode.SPACE)
         event_type = InputEvent.KEY_PRESS if is_press else InputEvent.KEY_RELEASE
         return key_code, event_type
-
+        
     def _on_keyboard_press(self, key):
         """Handle keyboard press events."""
-        translated_event = self._translate_key_event((key, True))
+
+        key = self.keyboard_listener.canonical(key)
+        translated_event = self._translate_key_event(key, True)
         self.on_input_event(translated_event)
 
     def _on_keyboard_release(self, key):
         """Handle keyboard release events."""
-        translated_event = self._translate_key_event((key, False))
+
+        key = self.keyboard_listener.canonical(key)
+        translated_event = self._translate_key_event(key, False)
         self.on_input_event(translated_event)
 
     def _on_mouse_click(self, x, y, button, pressed):
         """Handle mouse click events."""
-        translated_event = self._translate_key_event((button, pressed))
+        
+        translated_event = self._translate_key_event(button, pressed)
         self.on_input_event(translated_event)
 
     def _create_key_map(self):
         """Create a mapping from pynput keys to our internal KeyCode enum."""
         return {
             # Modifier keys
+            self.keyboard.Key.ctrl: KeyCode.CTRL_LEFT,
             self.keyboard.Key.ctrl_l: KeyCode.CTRL_LEFT,
             self.keyboard.Key.ctrl_r: KeyCode.CTRL_RIGHT,
+            self.keyboard.Key.shift: KeyCode.SHIFT_LEFT,
             self.keyboard.Key.shift_l: KeyCode.SHIFT_LEFT,
             self.keyboard.Key.shift_r: KeyCode.SHIFT_RIGHT,
+            self.keyboard.Key.alt: KeyCode.ALT_LEFT,
             self.keyboard.Key.alt_l: KeyCode.ALT_LEFT,
             self.keyboard.Key.alt_r: KeyCode.ALT_RIGHT,
+            self.keyboard.Key.cmd: KeyCode.META_LEFT,
             self.keyboard.Key.cmd_l: KeyCode.META_LEFT,
             self.keyboard.Key.cmd_r: KeyCode.META_RIGHT,
 
