@@ -31,12 +31,6 @@ class SettingsWindow(BaseWindow):
         self.create_tabs()
         self.create_buttons()
 
-        # Connect the use_api checkbox state change
-        self.use_api_checkbox = self.findChild(QCheckBox, 'model_options_use_api_input')
-        if self.use_api_checkbox:
-            self.use_api_checkbox.stateChanged.connect(lambda: self.toggle_api_local_options(self.use_api_checkbox.isChecked()))
-            self.toggle_api_local_options(self.use_api_checkbox.isChecked())
-
     def create_tabs(self):
         """Create tabs for each category in the schema."""
         for category, settings in self.schema.items():
@@ -121,8 +115,6 @@ class SettingsWindow(BaseWindow):
     def create_checkbox(self, value, key):
         widget = QCheckBox()
         widget.setChecked(value)
-        if key == 'use_api':
-            widget.setObjectName('model_options_use_api_input')
         return widget
 
     def create_combobox(self, value, options):
@@ -133,10 +125,7 @@ class SettingsWindow(BaseWindow):
 
     def create_line_edit(self, value, key=None):
         widget = QLineEdit(value)
-        if key == 'api_key':
-            widget.setEchoMode(QLineEdit.Password)
-            widget.setText(os.getenv('OPENAI_API_KEY') or value)
-        elif key == 'model_path':
+        if key == 'model_path':
             layout = QHBoxLayout()
             layout.addWidget(widget)
             browse_button = QPushButton('Browse')
@@ -175,14 +164,6 @@ class SettingsWindow(BaseWindow):
     def save_settings(self):
         """Save the settings to the config file and .env file."""
         self.iterate_settings(self.save_setting)
-
-        # Save the API key to the .env file
-        api_key = ConfigManager.get_config_value('model_options', 'api', 'api_key') or ''
-        set_key('.env', 'OPENAI_API_KEY', api_key)
-        os.environ['OPENAI_API_KEY'] = api_key
-
-        # Remove the API key from the config
-        ConfigManager.set_config_value(None, 'model_options', 'api', 'api_key')
 
         ConfigManager.save_config()
         QMessageBox.information(self, 'Settings Saved', 'Settings have been saved. The application will now restart.')

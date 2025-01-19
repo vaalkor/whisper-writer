@@ -2,8 +2,6 @@ import time
 import traceback
 import numpy as np
 import sounddevice as sd
-import tempfile
-import wave
 import webrtcvad
 from PyQt5.QtCore import QThread, QMutex, pyqtSignal
 from collections import deque
@@ -32,12 +30,7 @@ class ResultThread(QThread):
     statusSignal = pyqtSignal(str)
     resultSignal = pyqtSignal(str)
 
-    def __init__(self, local_model=None):
-        """
-        Initialize the ResultThread.
-
-        :param local_model: Local transcription model (if applicable)
-        """
+    def __init__(self, local_model):
         super().__init__()
         self.local_model = local_model
         self.is_recording = False

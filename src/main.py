@@ -1,6 +1,5 @@
 import os
 import sys
-import time
 from audioplayer import AudioPlayer
 from pynput.keyboard import Controller
 from PyQt5.QtCore import QObject, QProcess
@@ -52,10 +51,7 @@ class WhisperWriterApp(QObject):
         self.key_listener.add_callback("on_activate_clipboard_only", lambda: self.on_activation(type_result=False, use_clipboard=True))
         self.key_listener.add_callback("on_activate_typing_and_clipboard", lambda: self.on_activation(type_result=True, use_clipboard=True))
         self.key_listener.add_callback("on_deactivate", self.on_deactivation)
-
-        model_options = ConfigManager.get_config_section('model_options')
-        model_path = model_options.get('local', {}).get('model_path')
-        self.local_model = create_local_model() if not model_options.get('use_api') else None
+        self.local_model = create_local_model()
 
         self.result_thread = None
 
@@ -125,9 +121,6 @@ class WhisperWriterApp(QObject):
             self.initialize_components()
 
     def on_activation(self, type_result, use_clipboard):
-        """
-        Called when the activation key combination is pressed.
-        """
         self.type_result = type_result
         self.use_clipboard = use_clipboard
 
@@ -142,17 +135,11 @@ class WhisperWriterApp(QObject):
         self.start_result_thread()
 
     def on_deactivation(self):
-        """
-        Called when the activation key combination is released.
-        """
         if ConfigManager.get_config_value('recording_options', 'recording_mode') == 'hold_to_record':
             if self.result_thread and self.result_thread.isRunning():
                 self.result_thread.stop_recording()
 
     def start_result_thread(self):
-        """
-        Start the result thread to record audio and transcribe it.
-        """
         if self.result_thread and self.result_thread.isRunning():
             return
 
@@ -164,22 +151,19 @@ class WhisperWriterApp(QObject):
         self.result_thread.start()
 
     def stop_result_thread(self):
-        """
-        Stop the result thread.
-        """
         if self.result_thread and self.result_thread.isRunning():
             self.result_thread.stop()
 
     def on_transcription_complete(self, result):
-        """
-        When the transcription is complete, type the result and start listening for the activation key again.
-        """
         if(self.type_result):
             self.input_simulator.typewrite(result)
 
         if(self.use_clipboard):
             clipboard = QApplication.clipboard()
             clipboard.setText(result)
+
+        if(self.use_clipboard and not self.type_result):
+            self.input_simulator.paste()
 
         if ConfigManager.get_config_value('misc', 'noise_on_completion'):
             AudioPlayer(os.path.join('assets', 'beep.wav')).play(block=True)
@@ -190,9 +174,6 @@ class WhisperWriterApp(QObject):
             self.key_listener.start()
 
     def run(self):
-        """
-        Start the application.
-        """
         sys.exit(self.app.exec_())
 
 

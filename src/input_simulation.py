@@ -2,7 +2,7 @@ import subprocess
 import os
 import signal
 import time
-from pynput.keyboard import Controller as PynputController
+from pynput.keyboard import Controller as PynputController, KeyCode, Key
 
 from utils import ConfigManager
 
@@ -20,10 +20,6 @@ def run_command_or_exit_on_failure(command):
         exit(1)
 
 class InputSimulator:
-    """
-    A class to simulate keyboard input using various methods.
-    """
-
     def __init__(self):
         """
         Initialize the InputSimulator with the specified configuration.
@@ -65,6 +61,20 @@ class InputSimulator:
             self._typewrite_ydotool(text, interval)
         elif self.input_method == 'dotool':
             self._typewrite_dotool(text, interval)
+
+    def paste(self):
+        """
+        Simulate pasting the given text.
+
+        Args:
+            text (str): The text to paste.
+        """
+        if not self.input_method == 'pynput':
+            raise NotImplementedError("Pasting is only supported with pynput.")
+        self.keyboard.press(Key.ctrl_l)
+        self.keyboard.press(KeyCode.from_char('v'))
+        self.keyboard.release(KeyCode.from_char('v'))
+        self.keyboard.release(Key.ctrl_l)
 
     def _typewrite_pynput(self, text, interval):
         """
